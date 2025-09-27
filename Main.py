@@ -10,7 +10,7 @@ font = pygame.font.Font('fonts/Pixeltype.ttf', 50)
 
 
 background_surface = pygame.transform.rotozoom(pygame.image.load('graphics/background.jpg').convert_alpha(), 0, 3)
-background_rect = background_surface.get_rect(topleft=(0, 0))
+background_rect = background_surface.get_rect(middle=(dimensions[0]//2, dimensions[1]//2))
 
 while True:
     for event in pygame.event.get():
