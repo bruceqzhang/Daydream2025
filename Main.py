@@ -1,6 +1,14 @@
 import pygame
 from sys import exit
 
+class Zombie(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.image = pygame.image.load('graphics/zombie.png').convert_alpha()
+        self.rect = self.image.get_rect(center=(80, 300))
+
+
+
 class Character(pygame.sprite.Sprite):
     global dimensions, background_rect, background_surface
     def __init__(self):
@@ -12,7 +20,7 @@ class Character(pygame.sprite.Sprite):
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LEFT]:
             background_rect.x += 5  # Move background in opposite direction
-            if background_rect.left <= 0:
+            #if background_rect1.left >= 0:
 
         if keys[pygame.K_RIGHT] and background_rect.right >= dimensions[0]:
             background_rect.x -= 5
@@ -41,6 +49,8 @@ background_rect3 = background_surface.get_rect(center=(dimensions[0]//2, dimensi
 background_rect4 = background_surface.get_rect(center=(dimensions[0]//2, dimensions[1]//2))
 character = pygame.sprite.GroupSingle()
 character.add(Character())
+zombie_group = pygame.sprite.Group()
+zombie_group.add(Zombie())
 
 while True:
     for event in pygame.event.get():
@@ -51,6 +61,8 @@ while True:
     screen.blit(background_surface, background_rect1)
     character.update()
     character.draw(screen)
+    zombie_group.update()
+    zombie_group.draw(screen)
     pygame.display.update()
     clock.tick(60)
 
