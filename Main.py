@@ -1,6 +1,26 @@
 import pygame
 from sys import exit
 
+class Character(pygame.sprite.Sprite):
+    global dimensions, background_rect, background_surface
+    def __init__(self):
+        super().__init__()
+        self.image = pygame.transform.rotozoom(pygame.image.load('graphics/character.png').convert_alpha(), 0,0.1)
+        self.rect = self.image.get_rect(center =(dimensions[0]//2, dimensions[1]//2))
+
+    def update(self):
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT] and background_rect.left <= 0:
+            background_rect.x += 5  # Move background in opposite direction
+        if keys[pygame.K_RIGHT] and background_rect.right >= dimensions[0]:
+            background_rect.x -= 5
+        if keys[pygame.K_UP] and background_rect.top <= 0:
+            background_rect.y += 5
+        if keys[pygame.K_DOWN] and background_rect.bottom >= dimensions[1]:
+            background_rect.y -= 5
+
+
+
 pygame.init()
 dimensions = (1000,640)
 screen = pygame.display.set_mode(dimensions)
@@ -10,7 +30,7 @@ font = pygame.font.Font('fonts/Pixeltype.ttf', 50)
 
 
 background_surface = pygame.transform.rotozoom(pygame.image.load('graphics/background.jpg').convert_alpha(), 0, 3)
-background_rect = background_surface.get_rect(center=(dimensions[0]//2, dimensions[1]//2))
+background_rect = background_surface.get_rect(middle=(dimensions[0]//2, dimensions[1]//2))
 
 while True:
     for event in pygame.event.get():
@@ -19,7 +39,8 @@ while True:
             exit()
 
     screen.blit(background_surface, background_rect)
-
+    character.update()
+    character.draw(screen)
     pygame.display.update()
     clock.tick(60)
 
