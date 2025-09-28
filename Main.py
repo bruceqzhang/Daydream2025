@@ -1,24 +1,35 @@
+
 import pygame
 from random import randint
 import math
 from sys import exit
 
-pygame.init()
-font = pygame.font.Font('fonts/Pixeltype.ttf', 50)
 
+iframe=0
+snowball_pos=(0,0)
+deathcount=0
+score=0
+lifespan=180
 rect_width = 50
 rect_height = 10
 zombie_timer=5000
+supply_timer = 6700
 buff=True
-shot_timer=1000
-swing_cooldown=500
+shot_timer=2000
+swing_cooldown=1000
 light_display_time=40
 display_checker=0
 zx=0
 zy=0
+global damagerandomizer, healrandomizer
+damagerandomizer = 0
+healrandomizer = 0
+snowball_cd=4000
+freeze_timer=60
 
-energy_bar_length = 100
-energy_bar_width = 10
+
+energy_bar_length = 200
+energy_bar_width = 20
 game_status = 0 # 0 = welcome 1 = playing, 2 = paused, 3 = game over
 
 class Background:
@@ -46,12 +57,22 @@ class Background:
 class Supplies(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
+        self.spawnlocation = randint(0,3)
         self.image = pygame.transform.rotozoom(pygame.image.load('graphics/supplies.png').convert_alpha(), 0,0.1)
-        self.rect = self.image.get_rect(center =(x, y))
+        if (self.spawnlocation==0):
+            self.rect = self.image.get_rect(center=(-50, randint(0, dimensions[1])))
+        elif (self.spawnlocation==1):
+            self.rect = self.image.get_rect(center=(dimensions[0]+50, randint(0, dimensions[1])))
+        elif (self.spawnlocation==2):
+            self.rect = self.image.get_rect(center=(randint(0, dimensions[0]), -50))
+        elif (self.spawnlocation==3):
+            self.rect = self.image.get_rect(center=(randint(0, dimensions[0]), dimensions[1]+50))
 
-    def update(self):
-        if pygame.sprite.collide_rect(self, character.sprite):
-            #trigger menu
+    def update(self,x_velocity,y_velocity):
+        self.rect.x-=x_velocity
+        self.rect.y-=y_velocity
+        if self.rect.colliderect(group_hitbox):
+            prompt_user()
             self.kill()
     
     
@@ -62,6 +83,8 @@ class Zombie(pygame.sprite.Sprite):
 
     def __init__(self):
         super().__init__()
+        self.frozen = False
+        self.freeze_timer = 0
         self.spawnlocation = randint(0,3)
         self.health = 3
         self.speed = 1
@@ -79,42 +102,53 @@ class Zombie(pygame.sprite.Sprite):
         self.y_accumulation = 0.0
 
     def move(self, x_velocity, y_velocity):
+
         zx_velocity = 0.0
         zy_velocity = 0.0
         hypotenuse = math.hypot(self.rect.x - dimensions[0]/2, self.rect.y - dimensions[1]/2)
         delta_y = self.rect.y - dimensions[1]/2
         delta_x = self.rect.x - dimensions[0]/2
+        if self.frozen == False:    
+            if self.rect.x < dimensions[0]/2:
+                zx_velocity += math.sqrt(1-(delta_y**2)/(hypotenuse**2))
+            if self.rect.x > dimensions[0]/2:
+                zx_velocity -= math.sqrt(1-(delta_y**2)/(hypotenuse**2))
+            if self.rect.y < dimensions[1]/2:
+                zy_velocity += math.sqrt(1-(delta_x**2)/(hypotenuse**2))
+            if self.rect.y > dimensions[1]/2:
+                zy_velocity -= math.sqrt(1-(delta_x**2)/(hypotenuse**2))
             
-        if self.rect.x < dimensions[0]/2:
-            zx_velocity += math.sqrt(1-(delta_y**2)/(hypotenuse**2))
-        if self.rect.x > dimensions[0]/2:
-            zx_velocity -= math.sqrt(1-(delta_y**2)/(hypotenuse**2))
-        if self.rect.y < dimensions[1]/2:
-            zy_velocity += math.sqrt(1-(delta_x**2)/(hypotenuse**2))
-        if self.rect.y > dimensions[1]/2:
-            zy_velocity -= math.sqrt(1-(delta_x**2)/(hypotenuse**2))
-        
-        self.x_accumulation += zx_velocity - round(zx_velocity)  
-        self.y_accumulation += zy_velocity - round(zy_velocity)
+            self.x_accumulation += zx_velocity - round(zx_velocity)  
+            self.y_accumulation += zy_velocity - round(zy_velocity)
 
-        if self.x_accumulation >= 1.0:
-            zx_velocity += 1
-            self.x_accumulation -= 1.0
-        elif self.x_accumulation <= -1.0:
-            zx_velocity -= 1
-            self.x_accumulation += 1.0
-        if self.y_accumulation >= 1.0:
-            zy_velocity += 1
-            self.y_accumulation -= 1.0
-        elif self.y_accumulation <= -1.0:
-            zy_velocity -= 1
-            self.y_accumulation += 1.0
-
+            if self.x_accumulation >= 1.0:
+                zx_velocity += 1
+                self.x_accumulation -= 1.0
+            elif self.x_accumulation <= -1.0:
+                zx_velocity -= 1
+                self.x_accumulation += 1.0
+            if self.y_accumulation >= 1.0:
+                zy_velocity += 1
+                self.y_accumulation -= 1.0
+            elif self.y_accumulation <= -1.0:
+                zy_velocity -= 1
+                self.y_accumulation += 1.0
+        else:
+            self.freeze_timer -= 1
+            if self.freeze_timer <= 0:
+                self.frozen = False
         self.rect.x += zx_velocity - x_velocity
         self.rect.y += zy_velocity - y_velocity
-    
+
     def update(self, x_velocity, y_velocity):
+        global damagerandomizer, iframe, group_hitbox
         self.move(x_velocity, y_velocity)
+        if iframe>0:
+            iframe-=1
+        if iframe==0:
+            if self.rect.colliderect(group_hitbox):
+                iframe=100
+                damagerandomizer = randint(1,5)
 
 
 
@@ -123,43 +157,69 @@ class Melee(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
         self.image = pygame.transform.rotozoom(pygame.image.load('graphics/swordsman.png').convert_alpha(), 0,0.1)
-        self.rect = self.image.get_rect(center =(dimensions[0]//2 + 50, dimensions[1]//2))
+        self.rect = self.image.get_rect(center =(dimensions[0]//2 - 50, dimensions[1]//2))
         self.energy = 100
+        self.start_energy = 100
 
     def slash(self, zombie_group, surface):
-        self.slash_image = pygame.transform.rotozoom(pygame.image.load('graphics/slash.png').convert_alpha(), 0,1)
-        dx =zx - self.rect.centerx
+        slash_img = pygame.transform.rotozoom(pygame.image.load('graphics/slash.png').convert_alpha(), 0,2)
+        dx = zx - self.rect.centerx
         dy = zy - self.rect.centery
         angle = math.degrees(math.atan2(-dy, dx))
-        rotated_slash = pygame.transform.rotate(self.slash_image, angle)
-        slash_rect = rotated_slash.get_rect(center =(self.rect.centerx, self.rect.centery))
+        rotated_slash = pygame.transform.rotate(slash_img, angle)
+        slash_rect = rotated_slash.get_rect(center=self.rect.center)
         surface.blit(rotated_slash, slash_rect)
-
+        
+        slash_mask = pygame.mask.from_surface(rotated_slash)
         for zombie in zombie_group:
-            if pygame.sprite.collide_rect(self, zombie):
+            zombie_mask = pygame.mask.from_surface(zombie.image)
+            offset = (zombie.rect.left - slash_rect.left, zombie.rect.top - slash_rect.top)
+            if slash_mask.overlap(zombie_mask, offset):
                 zombie.health -= 1
                 if zombie.health <= 0:
                     zombie.kill()
 
-                
+    def update_energy(self):
+        if self.energy > 0:
+            self.energy -= 0.01
+        if self.energy <=0:
+            self.energy = 0
+    
+        pygame.draw.rect(screen, (255,255,255), (0,0, energy_bar_length, energy_bar_width))
+        pygame.draw.rect(screen, (255,0,0), (0,0, energy_bar_length * (self.energy/self.start_energy), energy_bar_width))
+        meelee_energy_text = font.render(f'Swordsman Energy: {int(self.energy)}', False, (0,0,0))
+        screen.blit(meelee_energy_text, (0,0))
+
 
     def update(self, surface):
-        surface.blit(self.image, self.rect)
-        global swing_cooldown
-        swing_cooldown -= 10
-        if swing_cooldown <= 0:
-            self.slash(zombie_group, surface)
-            swing_cooldown = 500
+        if self.energy>0:
+            surface.blit(self.image, self.rect)
+            global swing_cooldown, damagerandomizer, healrandomizer, deathcount
+            swing_cooldown -= 10
+            if swing_cooldown <= 0:
+                self.slash(zombie_group, surface)
+                swing_cooldown = 1000
+            if damagerandomizer == 1:
+                self.energy -= 10
+                damagerandomizer = 0
+            if healrandomizer == 1:
+                self.energy += 20
+                if self.start_energy-self.energy<=0:
+                    self.energy = self.start_energy
+                healrandomizer = 0
+            self.update_energy()
+        else:
+            self.kill()
+            deathcount+=1
         
 class Lights(pygame.sprite.Sprite):
-    global start_energy
-    start_energy = 50
     def __init__(self):
         super().__init__()
         self.image = pygame.transform.rotozoom(pygame.image.load('graphics/igor.png').convert_alpha(), 0,0.1)
-        screen.blit(self.image, (dimensions[0]//2 - 100, dimensions[1]//2))
+        screen.blit(self.image, (dimensions[0]//2 +50, dimensions[1]//2 +200))
         self.rect = self.image.get_rect(center = (dimensions[0]//2, dimensions[1]//2))
-        self.energy = start_energy
+        self.energy = 50
+        self.start_energy = 50
 
         
     
@@ -174,19 +234,33 @@ class Lights(pygame.sprite.Sprite):
 
     def update_energy(self):
         if self.energy > 0:
-            self.energy -= 0.03
+            self.energy -= 0.01
         if self.energy <=0:
             self.energy = 0
-        pygame.draw.rect(screen, (0,0,0), (0,0, energy_bar_length, energy_bar_width))
-        pygame.draw.rect(screen, (255,0,0), (0,0, energy_bar_length * (lights.energy/start_energy), energy_bar_width))
-        light_energy_text = font.render(f'Light Master Energy: {int(self.energy)}', False, (255,255,255))
-        screen.blit(light_energy_text, (0,0),(0,0, energy_bar_length * (lights.energy/start_energy), energy_bar_width) )
+    
+        pygame.draw.rect(screen, (255,255,255), (0,(energy_bar_width+2), energy_bar_length, energy_bar_width))
+        pygame.draw.rect(screen, (255,0,0), (0,(energy_bar_width+2), energy_bar_length * (self.energy/self.start_energy), energy_bar_width))
+        light_energy_text = font.render(f'Light Master Energy: {int(self.energy)}', False, (0,0,0))
+        screen.blit(light_energy_text, (0,energy_bar_width+2))
     
     def update(self, surface):
-        self.dim_screen()
-        surface.blit(self.image, self.rect)
-        self.update_energy()
+        global damagerandomizer, healrandomizer, deathcount
 
+        self.dim_screen()
+        if self.energy>0:
+            surface.blit(self.image, self.rect)
+            self.update_energy()
+            if damagerandomizer == 2:
+                self.energy -= 10
+                damagerandomizer = 0
+            if healrandomizer == 2:
+                self.energy += 20
+                if self.start_energy-self.energy<=0:
+                    self.energy = self.start_energy
+                healrandomizer = 0
+        else:
+            self.kill()
+            deathcount+=1
 
 class Pistol(pygame.sprite.Sprite):
     global dimensions, background_rect, background_surface
@@ -195,6 +269,7 @@ class Pistol(pygame.sprite.Sprite):
         self.image = pygame.transform.rotozoom(pygame.image.load('graphics/hannah.png').convert_alpha(), 0,0.4)
         self.rect = self.image.get_rect(center =(dimensions[0]//2 + 100, dimensions[1]//2))
         self.energy = 100
+        self.start_energy = 100
 
     def get_closest_zombie(self, zombie_group):
         global screen
@@ -209,23 +284,48 @@ class Pistol(pygame.sprite.Sprite):
                 closest_zombie = zombie
         return closest_zombie
         
-    def shoot(self, zombie_group):
+    def shoot(self):
         global shot_timer,display_checker
         if buff==True:
-            shot_timer = 1000
-        else:
             shot_timer = 2000
-        closest_zombie = self.get_closest_zombie(zombie_group)
+        else:
+            shot_timer = 4000
+        pygame.draw.line(screen, (255,255,0), (self.rect.centerx, self.rect.centery), (zx, zy), 5)              
         if closest_zombie:
-            zx, zy = closest_zombie.rect.center
-            pygame.draw.line(screen, (255,255,0), (self.rect.centerx, self.rect.centery), (zx, zy), 5)              
             closest_zombie.health -= 1
             if closest_zombie.health <= 0:
                 closest_zombie.kill()
-        display_checker = 1
+    display_checker = 1
+
+    def update_energy(self):
+        if self.energy > 0:
+            self.energy -= 0.01
+        if self.energy <=0:
+            self.energy = 0
     
-    def draw(self, surface):
-        surface.blit(self.image, self.rect)
+        pygame.draw.rect(screen, (255,255,255), (0,(energy_bar_width+2)*2, energy_bar_length, energy_bar_width))
+        pygame.draw.rect(screen, (255,0,0), (0,(energy_bar_width+2)*2, energy_bar_length * (self.energy/self.start_energy), energy_bar_width))
+        pistol_energy_text = font.render(f'Gunman Energy: {int(self.energy)}', False, (0,0,0))
+        screen.blit(pistol_energy_text, (0,(energy_bar_width+2)*2))
+
+    def update(self,surface):
+        global damagerandomizer, healrandomizer, deathcount
+        global shot_timer
+        if self.energy>0:
+            surface.blit(self.image, self.rect)
+            shot_timer -= 10
+            self.update_energy()
+            if damagerandomizer == 3:
+                self.energy -= 10
+                damagerandomizer = 0
+            if healrandomizer == 3:
+                self.energy += 20
+                if self.start_energy-self.energy<=0:
+                    self.energy = self.start_energy
+                healrandomizer = 0    
+        else:   
+            self.kill()
+            deathcount+=1
 
 
             
@@ -237,15 +337,127 @@ class Cheerleader(pygame.sprite.Sprite):
         super().__init__()
         self.image = pygame.transform.rotozoom(pygame.image.load('graphics/cheerleader.png').convert_alpha(), 0,0.4)
         self.rect = self.image.get_rect(center =(dimensions[0]//2 +50, dimensions[1]//2))
-        self.energy = 100
-        print(self.rect.centerx, self.rect.centery)
+        self.energy = 80
+        self.start_energy = 80
 
+    def update_energy(self):
+        if self.energy > 0:
+            self.energy -= 0.02
+        if self.energy <=0:
+            self.energy = 0
+    
+        pygame.draw.rect(screen, (255,255,255), (0,(energy_bar_width+2)*3, energy_bar_length, energy_bar_width))
+        pygame.draw.rect(screen, (255,0,0), (0,(energy_bar_width+2)*3, energy_bar_length * (self.energy/self.start_energy), energy_bar_width))
+        cheerleader_energy_text = font.render(f'Cheerleader Energy: {int(self.energy)}', False, (0,0,0))
+        screen.blit(cheerleader_energy_text, (0,(energy_bar_width+2)*3))
 
 
     def update(self,surface):
-        buff==True
+        global damagerandomizer, healrandomizer, deathcount
+        if self.energy>0:
+            surface.blit(self.image, self.rect)
+            if damagerandomizer == 4:
+                damagerandomizer = 0
+                self.energy-=10
+            if healrandomizer == 4:
+                self.energy += 20
+                if self.start_energy-self.energy<=0:
+                    self.energy = self.start_energy
+                healrandomizer = 0   
+        else:
+            self.kill()
+            deathcount+=1
+        
+
+class Snowball(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.image = pygame.transform.rotozoom(pygame.image.load('graphics/kid.png').convert_alpha(), 0,0.08)
+        self.rect = self.image.get_rect(center =(dimensions[0]//2, dimensions[1]//2 + 50))
+        self.energy = 100
+        self.start_energy = 100
+    
+    def update(self,surface):
+        global damagerandomizer, snowball_cd, healrandomizer,lifespan, deathcount
+        if self.energy>0:
+            surface.blit(self.image, self.rect)
+            if damagerandomizer == 5:
+                self.energy -= 10
+                damagerandomizer = 0
+            if healrandomizer == 5:
+                self.energy += 20
+                if self.start_energy-self.energy<=0:
+                    self.energy = self.start_energy
+                healrandomizer = 0   
+            snowball_cd -= 10
+            if snowball_cd <= 0:
+                snowball_cd = 4000 if buff==True else 2000
+                lifespan=180
+                snowball_group.add(SnowballProjectile(self.rect.center, (closestzombiex, closestzombiey)))
+        else:
+            self.kill()
+            deathcount+=1
+    
+        self.update_energy()
+
+    def update_energy(self):
+        if self.energy > 0:
+            self.energy -= 0.01
+        if self.energy <=0:
+            self.energy = 0
+    
+        pygame.draw.rect(screen, (255,255,255), (0,(energy_bar_width+2)*4, energy_bar_length, energy_bar_width))
+        pygame.draw.rect(screen, (255,0,0), (0,(energy_bar_width+2)*4, energy_bar_length * (self.energy/self.start_energy), energy_bar_width))
+        snow_energy_text = font.render(f'Annoying Kid Energy: {int(self.energy)}', False, (0,0,0))
+        screen.blit(snow_energy_text, (0,(energy_bar_width+2)*4))
+        
+
+    
+class SnowballProjectile(pygame.sprite.Sprite):
+   
+    def __init__(self,pos,target):
+        super().__init__()
+        self.image = pygame.transform.rotozoom(pygame.image.load('graphics/snowball.png').convert_alpha(), 0,0.2)
+        self.rect = self.image.get_rect(center =(dimensions[0]//2 , dimensions[1]//2+100))
+        self.pos = pygame.Vector2(pos)
+        self.target = pygame.Vector2(target)
+        self.speed = 15
+
+
+    def update(self,surface):
+        global lifespan
         surface.blit(self.image, self.rect)
 
+        direction = self.target - self.pos
+        if direction.length() > 0:
+            direction = direction.normalize()
+            self.pos += direction * self.speed
+            self.rect.center = self.pos
+        
+        lifespan -= 1
+        if lifespan <= 0:
+            self.kill()
+            
+
+
+        # Remove if off screen
+        if not screen.get_rect().collidepoint(self.pos):
+            self.kill()
+            
+
+        # Check collision with zombies
+        for zombie in zombie_group:
+            if self.rect.colliderect(zombie.rect):
+                zombie.frozen = True
+                zombie.freeze_timer = 120  # freeze for 2 seconds
+                self.kill()
+                    
+            
+            
+   
+
+            
+    
 
 
 def collisions():
@@ -262,20 +474,49 @@ def collisions():
                     zombie_1.rect.y += 1
                 # Simple collision response: move them apart
 
+def prompt_user():
+    prompt_message = font.render('Picked up supplies! Choose a character to replenish energy (1-5)', False, (255, 255, 255))
+    prompt_rect = prompt_message.get_rect(center = (dimensions[0]//2, dimensions[1]//2))
+    while True:
+        pygame.draw.rect(screen,(0,100,50),prompt_rect)
+        screen.blit(prompt_message, prompt_rect)
+        global healrandomizer
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_1:
+                    healrandomizer = 1
+                    return
+                elif event.key == pygame.K_2:
+                    healrandomizer = 2
+                    return
+                elif event.key == pygame.K_3:
+                    healrandomizer = 3
+                    return
+                elif event.key == pygame.K_4:
+                    healrandomizer = 4
+                    return
+                elif event.key == pygame.K_5:
+                    healrandomizer = 5
+                    return
+
 pygame.init()
+
+font = pygame.font.Font('fonts/Pixeltype.ttf', 50)
 dimensions = (1000,640)
 screen = pygame.display.set_mode(dimensions)
 pygame.display.set_caption("Daydream")
 clock = pygame.time.Clock()
-font = pygame.font.Font('fonts/Pixeltype.ttf', 50)
+font = pygame.font.Font('fonts/Pixeltype.ttf', 18)
 
 
 background = Background('graphics/background.jpg')
 camera_x = 0
 camera_y = 0
 
-character= pygame.sprite.GroupSingle()
-#character.add(Character())
+
 
 lights = Lights()
 
@@ -285,21 +526,37 @@ cheerleader = Cheerleader()
 
 meelee = Melee()
 
+kid = Snowball()
+
+character_group = pygame.sprite.Group()
+character_group.add(pistol, cheerleader, meelee, kid)
+
+snowball_group = pygame.sprite.Group() 
+
 zombie_group = pygame.sprite.Group()
 
 zombie_spawn_timer = pygame.USEREVENT + 1
 pygame.time.set_timer(zombie_spawn_timer, zombie_timer)
 
+supply_spawn_timer = pygame.USEREVENT + 2
+pygame.time.set_timer(supply_spawn_timer, supply_timer)
+supply_group = pygame.sprite.Group()
+
+group_hitbox = None
 
 while True:
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             exit()
         if event.type == zombie_spawn_timer:
             zombie_group.add(Zombie())
-            if zombie_timer > 1000:
-                zombie_timer -= 50
+            zombie_group.add(Zombie())
+            if zombie_timer > 400:
+                zombie_timer -= 200
+        if event.type == supply_spawn_timer:
+            supply_group.add(Supplies(randint(0,dimensions[0]),randint(0,dimensions[1])))
 
     collisions()
     # Detect Key Presses
@@ -321,6 +578,13 @@ while True:
         x_velocity = (x_velocity / length) * 5
         y_velocity = (y_velocity / length) * 5
 
+    
+    for sprite in character_group:
+        if group_hitbox is None:
+            group_hitbox = sprite.rect.copy()
+        else:
+            group_hitbox = group_hitbox.union(sprite.rect)
+
 
     # Camera offset accumulates player movement
     camera_x += x_velocity
@@ -332,32 +596,54 @@ while True:
     # Draw background relative to camera
     background.draw(screen, camera_x, camera_y)
     
-    cheerleader.update(screen)
-
-
-    pistol.update()
-    pistol.draw(screen)
     
+    closest_zombie = pistol.get_closest_zombie(zombie_group)
+    if closest_zombie:
+        zx, zy = closest_zombie.rect.center
+        zombie_pos = pygame.Vector2(zx,zy)
 
-    shot_timer -= 10
+
     closest_zombie = pistol.get_closest_zombie(zombie_group)
     if closest_zombie:
         closestzombiex, closestzombiey = closest_zombie.rect.center
     if shot_timer <= 0:
-        pistol.shoot(zombie_group)
+        pistol.shoot()
     if display_checker==1:
         light_display_time -= 1
         if light_display_time <= 0:
             display_checker=0
-            light_display_time=40
+            light_display_time=80
 
+
+    supply_group.update(x_velocity, y_velocity)
+    supply_group.draw(screen)
     zombie_group.update(x_velocity, y_velocity)
     zombie_group.draw(screen)
 
+    snowball_group.update(screen)
+    
+    
+    # draw characters
+    cheerleader.update(screen)
+    pistol.update(screen)
     lights.update(screen)
-
     meelee.update(screen)
+    kid.update(screen)
 
+    # draw all energy bars AFTER everything else
+    cheerleader.update_energy()
+    pistol.update_energy()
+    lights.update_energy()
+    meelee.update_energy()
+    kid.update_energy()
+
+    score+=1/60.0
+
+    if deathcount==5:
+        print(str(score)+"seconds survived")
+        exit()
+
+    
     
     #screen.blit(lights.dim_surface)
     #pygame.draw.rect(screen,(50,50,50),(character.sprite.rect.centerx - rect_width // 2, character.sprite.rect.top - rect_height, rect_width, rect_height))
