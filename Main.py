@@ -2,13 +2,23 @@ import pygame
 from random import randint
 import math
 from sys import exit
+
+pygame.init()
+font = pygame.font.Font('fonts/Pixeltype.ttf', 50)
+
 rect_width = 50
 rect_height = 10
 zombie_timer=5000
 buff=True
 shot_timer=1000
+swing_cooldown=500
 light_display_time=40
 display_checker=0
+zx=0
+zy=0
+
+energy_bar_length = 100
+energy_bar_width = 10
 game_status = 0 # 0 = welcome 1 = playing, 2 = paused, 3 = game over
 
 class Background:
@@ -44,7 +54,10 @@ class Supplies(pygame.sprite.Sprite):
             #trigger menu
             self.kill()
     
-        
+    
+    
+
+
 class Zombie(pygame.sprite.Sprite):
 
     def __init__(self):
@@ -103,34 +116,76 @@ class Zombie(pygame.sprite.Sprite):
     def update(self, x_velocity, y_velocity):
         self.move(x_velocity, y_velocity)
 
-    
+
+
+
+class Melee(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.image = pygame.transform.rotozoom(pygame.image.load('graphics/swordsman.png').convert_alpha(), 0,0.1)
+        self.rect = self.image.get_rect(center =(dimensions[0]//2 + 50, dimensions[1]//2))
+        self.energy = 100
+
+    def slash(self, zombie_group, surface):
+        self.slash_image = pygame.transform.rotozoom(pygame.image.load('graphics/slash.png').convert_alpha(), 0,1)
+        dx =zx - self.rect.centerx
+        dy = zy - self.rect.centery
+        angle = math.degrees(math.atan2(-dy, dx))
+        rotated_slash = pygame.transform.rotate(self.slash_image, angle)
+        slash_rect = rotated_slash.get_rect(center =(self.rect.centerx, self.rect.centery))
+        surface.blit(rotated_slash, slash_rect)
+
+        for zombie in zombie_group:
+            if pygame.sprite.collide_rect(self, zombie):
+                zombie.health -= 1
+                if zombie.health <= 0:
+                    zombie.kill()
+
+                
+
+    def update(self, surface):
+        surface.blit(self.image, self.rect)
+        global swing_cooldown
+        swing_cooldown -= 10
+        if swing_cooldown <= 0:
+            self.slash(zombie_group, surface)
+            swing_cooldown = 500
         
 class Lights(pygame.sprite.Sprite):
+    global start_energy
+    start_energy = 50
     def __init__(self):
         super().__init__()
         self.image = pygame.transform.rotozoom(pygame.image.load('graphics/igor.png').convert_alpha(), 0,0.1)
-        screen.blit(self.image, (dimensions[0]//2 + 50, dimensions[1]//2))
+        screen.blit(self.image, (dimensions[0]//2 - 100, dimensions[1]//2))
         self.rect = self.image.get_rect(center = (dimensions[0]//2, dimensions[1]//2))
-        self.energy = 50
+        self.energy = start_energy
 
         
     
     def dim_screen(self):
+        buffed_value = 50 if buff==True else 0
         dim_level = 50 + 3*self.energy
         darkness = pygame.Surface((dimensions[0], dimensions[1]), pygame.SRCALPHA)
         darkness.fill((0,0,0,255))
-        pygame.draw.circle(darkness, (0,0,0,0), (self.rect.centerx, self.rect.centery), 100+dim_level)
+        pygame.draw.circle(darkness, (0,0,0,0), (self.rect.centerx, self.rect.centery), 100+dim_level+buffed_value)
         screen.blit(darkness, (0,0))
 
 
-    
-    def update(self, surface):
+    def update_energy(self):
         if self.energy > 0:
-            self.energy -= 0.05
+            self.energy -= 0.03
         if self.energy <=0:
             self.energy = 0
+        pygame.draw.rect(screen, (0,0,0), (0,0, energy_bar_length, energy_bar_width))
+        pygame.draw.rect(screen, (255,0,0), (0,0, energy_bar_length * (lights.energy/start_energy), energy_bar_width))
+        light_energy_text = font.render(f'Light Master Energy: {int(self.energy)}', False, (255,255,255))
+        screen.blit(light_energy_text, (0,0),(0,0, energy_bar_length * (lights.energy/start_energy), energy_bar_width) )
+    
+    def update(self, surface):
         self.dim_screen()
         surface.blit(self.image, self.rect)
+        self.update_energy()
 
 
 class Pistol(pygame.sprite.Sprite):
@@ -138,7 +193,7 @@ class Pistol(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
         self.image = pygame.transform.rotozoom(pygame.image.load('graphics/hannah.png').convert_alpha(), 0,0.4)
-        self.rect = self.image.get_rect(center =(dimensions[0]//2 + 50, dimensions[1]//2))
+        self.rect = self.image.get_rect(center =(dimensions[0]//2 + 100, dimensions[1]//2))
         self.energy = 100
 
     def get_closest_zombie(self, zombie_group):
@@ -163,7 +218,10 @@ class Pistol(pygame.sprite.Sprite):
         closest_zombie = self.get_closest_zombie(zombie_group)
         if closest_zombie:
             zx, zy = closest_zombie.rect.center
-            pygame.draw.line(screen, (255,255,0), (self.rect.centerx, self.rect.centery), (zx, zy), 5)                #closest_zombie.health -= 1
+            pygame.draw.line(screen, (255,255,0), (self.rect.centerx, self.rect.centery), (zx, zy), 5)              
+            closest_zombie.health -= 1
+            if closest_zombie.health <= 0:
+                closest_zombie.kill()
         display_checker = 1
     
     def draw(self, surface):
@@ -177,15 +235,17 @@ class Cheerleader(pygame.sprite.Sprite):
     global dimensions, background_rect, background_surface
     def __init__(self):
         super().__init__()
-        self.image = pygame.transform.rotozoom(pygame.image.load('graphics/character.png').convert_alpha(), 0,0.1)
-        self.rect = self.image.get_rect(center =(dimensions[0]//2, dimensions[1]//2))
+        self.image = pygame.transform.rotozoom(pygame.image.load('graphics/cheerleader.png').convert_alpha(), 0,0.4)
+        self.rect = self.image.get_rect(center =(dimensions[0]//2 +50, dimensions[1]//2))
         self.energy = 100
         print(self.rect.centerx, self.rect.centery)
 
 
 
-    #def update(self):
-    #     self.move()
+    def update(self,surface):
+        buff==True
+        surface.blit(self.image, self.rect)
+
 
 
 def collisions():
@@ -220,6 +280,10 @@ character= pygame.sprite.GroupSingle()
 lights = Lights()
 
 pistol = Pistol()
+
+cheerleader = Cheerleader()
+
+meelee = Melee()
 
 zombie_group = pygame.sprite.Group()
 
@@ -268,8 +332,8 @@ while True:
     # Draw background relative to camera
     background.draw(screen, camera_x, camera_y)
     
-    character.update()
-    character.draw(screen)
+    cheerleader.update(screen)
+
 
     pistol.update()
     pistol.draw(screen)
@@ -291,7 +355,8 @@ while True:
     zombie_group.draw(screen)
 
     lights.update(screen)
-    lights.dim_screen()
+
+    meelee.update(screen)
 
     
     #screen.blit(lights.dim_surface)
